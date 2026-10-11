@@ -33,3 +33,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Useful are
 - **Test scope:** This identifies the current reference device only; it is not a minimum-requirements claim and does not imply that every feature or game has been fully validated on this device.
 - **Other devices:** Compatibility and performance on other Android devices, including lower-end hardware, have not been established unless explicitly documented by a test result. Performance may vary with the GPU, graphics drivers, available memory, thermal behaviour, and game/runtime requirements.
 - **No blanket exclusion:** Lower-end devices are not declared incompatible; they require testing before support can be claimed.
+
+### Android port notes
+
+What this fork changes for Android, and what was reverse-engineered along the way, is documented in [docs/ANDROID_PORT.md](docs/ANDROID_PORT.md).
