@@ -14,9 +14,14 @@ An Android (arm64-v8a) port of [RumbleRosesXX-Recomp](https://github.com/Revan67
 
 ## Status of the source code
 
-The Android port was developed and built on a temporary Linux build machine. The source changes themselves (the Android launcher app, the native overlays on the SDK, and the build scripts) were not committed anywhere before that machine was recycled, so **they are not in this repository yet**. This document records what was implemented and what was reverse-engineered, in enough detail to rebuild it. Code will be added here if the sources are recovered or rewritten.
+The port's source is in this repository. It was recovered from the build session that produced the 0.1.3 APK and checked against that APK (the launcher's strings, the port's native log strings, and the SDK tree the overlays produce).
 
-No game files and no code recompiled from the game are included in this repository. Builds must be made from your own legally obtained copy of the game.
+- **Launcher and native build:** `android/` (Kotlin launcher, Android CMake project and JNI glue, Vortek, build scripts). [android/README.md](../android/README.md) explains how to build. The `<build-root>/rrxx-android` folder named in the build log below is `android/` here.
+- **SDK changes:** `android/native/overlay/rexglue-sdk/`, applied by `android/scripts/apply_overlays.sh` to the `android/rexglue-sdk` submodule (the WET port's pin `bd833a2`). The DLC support is `src/system/xam/content_manager.cpp` there; the zero-page fault mapping is in `src/system/mmio_handler.cpp`.
+- **Game project for the code generator:** `android/rrxx/` (app class, Rumble-XX patches, guest setjmp/longjmp pairing, `rrxx_manifest.toml`, `rrxx_functions.toml` and `tools/apply_code_patches.py`).
+- **Function list:** the 126 data-only functions in `rrxx_functions.toml` did not survive with the rest of the source, so they were derived again from the game's `default.xex` with the method described under "0.1.0 device test and 0.1.1 fixes" below, and checked against the 0.1.3 build: every function in its library is present again.
+
+No game files, no code recompiled from the game and no prebuilt APK are included. To build, you need your own legally obtained copy of the game, as an ISO or an extracted folder.
 
 Reference test device: Samsung Galaxy S25 (Snapdragon 8 Elite, Adreno 830). Results on other devices have not been tested.
 
