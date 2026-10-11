@@ -1,5 +1,9 @@
 # Rumble Roses XX Native Recompilation
 
+
+> **Android fork / AI-assisted development**  
+> This fork is intended to support development and experimentation toward running Rumble Roses XX on Android. AI tools are used as development assistants for code analysis, implementation, debugging, and build troubleshooting, with changes reviewed and tested as practical. Android support and build status depend on the current branch and should not be assumed from the upstream platform description alone.
+
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange)](#status)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)](#local-build)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
