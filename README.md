@@ -26,3 +26,10 @@ This is a developer build, not a one-click setup. It targets Windows with Visual
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Useful areas include original launcher UI, accessible import flows, save/profile compatibility, and synthetic tests that require no copyrighted game files. The project-authored code is under [MIT](LICENSE). This project is unofficial and is not affiliated with Konami or Microsoft; game names and marks belong to their owners.
+
+### Android device compatibility
+
+- **Reference test device:** Samsung Galaxy S25 with Snapdragon 8 Elite for Galaxy (Adreno 830 GPU, 12 GB RAM).
+- **Test scope:** This identifies the current reference device only; it is not a minimum-requirements claim and does not imply that every feature or game has been fully validated on this device.
+- **Other devices:** Compatibility and performance on other Android devices, including lower-end hardware, have not been established unless explicitly documented by a test result. Performance may vary with the GPU, graphics drivers, available memory, thermal behaviour, and game/runtime requirements.
+- **No blanket exclusion:** Lower-end devices are not declared incompatible; they require testing before support can be claimed.
