@@ -5,6 +5,9 @@ $forbiddenPaths = @(
     '\.(iso|xex|xexp|bin|data|pak|arc|xma|xma2|dxbc|dxil|spv|dmp|etl|log)$',
     'shader_cache', 'switch_tables'
 )
+# The Android launcher's Kotlin package com.deivid22srk.restuff.game is source code, not game
+# content: its folder is exempt from the game/ rule only. Every other rule still applies to it.
+$androidLauncherGamePackage = '^android/app/src/(main|test)/java/com/deivid22srk/restuff/game/[^/]+\.kt$'
 $tracked = @(git ls-files)
 if ($LASTEXITCODE -ne 0) { throw 'Unable to enumerate tracked files.' }
 $violations = [System.Collections.Generic.List[string]]::new()
@@ -12,6 +15,9 @@ foreach ($path in $tracked) {
     $normalized = $path.Replace('\', '/')
     foreach ($pattern in $forbiddenPaths) {
         if ($normalized -imatch $pattern) {
+            if ($pattern -eq '(^|/)game/' -and $normalized -cmatch $androidLauncherGamePackage) {
+                continue
+            }
             $violations.Add("Forbidden tracked path: $path")
             break
         }

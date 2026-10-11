@@ -1,0 +1,11 @@
+# Rumble Roses XX (4B4E07D1) for the ReXGlue codegen, Android port.
+
+[project]
+name = "rrxx"
+sdk_version = "0.10.0"
+game_root = "assets"
+
+[entrypoint]
+file_path = "assets/default.xex"
+out_directory_path = "generated/default"
+includes = ["rrxx_functions.toml"]
