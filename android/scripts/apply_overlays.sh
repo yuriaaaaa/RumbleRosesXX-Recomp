@@ -91,7 +91,12 @@ for rel in \
     src/system/function_dispatcher.cpp \
     src/system/mmio_handler.cpp \
     src/system/xmemory.cpp \
-    src/system/xam/content_manager.cpp
+    src/system/xam/content_manager.cpp \
+    src/system/xsocket.cpp \
+    src/kernel/xam/xam_net.cpp \
+    src/kernel/xam/xam_user.cpp \
+    src/kernel/xam/apps/xgi_app.cpp \
+    src/kernel/xam/apps/xlivebase_app.cpp
 do
     replace "$OVERLAY/rexglue-sdk/$rel" "$ROOT/rexglue-sdk/$rel"
 done

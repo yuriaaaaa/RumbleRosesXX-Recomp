@@ -201,6 +201,8 @@ class GameActivity : SDLActivity() {
         // ---- Players (Settings → Players): local multiplayer routing ----
         cfg["input_merge_controllers"] = "${settings.mergeControllers}"
         settings.playerInputs.forEachIndexed { i, v -> cfg["input_player${i + 1}"] = "\"$v\"" }
+        // ---- Network play (Settings → Network play): LAN sessions, experimental ----
+        cfg["net_play"] = "${settings.netPlay}"
         // ---- Rumble-XX patches (Settings → Game patches; rrxx/src/rrxx_patches.h) ----
         cfg["rrxx_blur_off"] = "${settings.patchBlurOff}"
         cfg["rrxx_bloom"] = "${settings.patchBloom.level}"
@@ -338,6 +340,18 @@ class GameActivity : SDLActivity() {
         // criada (visibilidade conforme a preferência): o diálogo de ajustes
         // rápidos liga/desliga AO VIVO, sem recriar nada.
         val settings = PortSettingsRepository(this).load()
+        // Network play: some Wi-Fi drivers drop broadcast packets (LAN session
+        // discovery) unless an app holds a multicast lock.
+        if (settings.netPlay) {
+            multicastLock = runCatching {
+                val wifi = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                    as android.net.wifi.WifiManager
+                wifi.createMulticastLock("rrxx-net-play").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }.getOrNull()
+        }
         val layout = SDLActivity.getContentView() as? ViewGroup
         if (layout != null) {
             val pad = VirtualGamepadView(
@@ -375,7 +389,11 @@ class GameActivity : SDLActivity() {
         applyOverlaySettings(settings)
     }
 
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
     override fun onDestroy() {
+        runCatching { multicastLock?.release() }
+        multicastLock = null
         fpsCounter?.stop()
         fpsCounter = null
         virtualPad?.shutdown()

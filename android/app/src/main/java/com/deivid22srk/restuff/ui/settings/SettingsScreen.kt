@@ -352,6 +352,18 @@ fun SettingsScreen(
 
             SectionGap()
 
+            // ======================= JOGO EM REDE ========================
+            SectionHeader("Network play (experimental)")
+            ToggleRow(
+                label = "Xbox Live over Wi-Fi",
+                subtitle = "Signs you in to a local stand-in for Xbox Live so two phones on the " +
+                    "same Wi-Fi can find each other's matches. Turn it on on both phones.",
+                checked = settings.netPlay,
+                onChange = { checked -> onSettingsChange { it.copy(netPlay = checked) } }
+            )
+
+            SectionGap()
+
             // =========================== EFEITOS =========================
             SectionHeader("Home screen")
 

@@ -92,6 +92,8 @@ data class PortSettings(
     /** Local multiplayer: what drives players 1-4. Each entry is "auto",
      *  "touch", "pad1".."pad4" or "none" (cvars input_player1..4). */
     val playerInputs: List<String> = DEFAULT_PLAYER_INPUTS,
+    /** Experimental network play on the local Wi-Fi (cvar net_play). */
+    val netPlay: Boolean = false,
 ) {
     /** All players on auto keeps the single-player behaviour: every device drives player 1. */
     val mergeControllers: Boolean get() = playerInputs.all { it == PLAYER_AUTO }
@@ -133,6 +135,7 @@ class PortSettingsRepository(context: Context) {
             patchNoQueenBanner = prefs.getBoolean(K_PATCH_QUEEN_BANNER, true),
             patchNoCrowds = prefs.getBoolean(K_PATCH_CROWDS, false),
             patchUltrawide = prefs.getBoolean(K_PATCH_ULTRAWIDE, false),
+            netPlay = prefs.getBoolean(K_NET_PLAY, false),
             playerInputs = List(4) { i ->
                 prefs.getString(K_PLAYER_PREFIX + (i + 1), PLAYER_AUTO)
                     ?.takeIf { playerInputPattern.matches(it) } ?: PLAYER_AUTO
@@ -162,6 +165,7 @@ class PortSettingsRepository(context: Context) {
             .putBoolean(K_PATCH_QUEEN_BANNER, s.patchNoQueenBanner)
             .putBoolean(K_PATCH_CROWDS, s.patchNoCrowds)
             .putBoolean(K_PATCH_ULTRAWIDE, s.patchUltrawide)
+            .putBoolean(K_NET_PLAY, s.netPlay)
             .also { e ->
                 s.playerInputs.forEachIndexed { i, v -> e.putString(K_PLAYER_PREFIX + (i + 1), v) }
             }
@@ -193,5 +197,6 @@ class PortSettingsRepository(context: Context) {
         const val K_PATCH_CROWDS = "rrxx_patch_no_crowds"
         const val K_PATCH_ULTRAWIDE = "rrxx_patch_ultrawide"
         const val K_PLAYER_PREFIX = "rrxx_player_input_"
+        const val K_NET_PLAY = "rrxx_net_play"
     }
 }
