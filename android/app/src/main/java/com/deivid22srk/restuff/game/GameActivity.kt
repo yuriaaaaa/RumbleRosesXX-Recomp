@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
 import com.deivid22srk.restuff.data.GamePaths
+import com.deivid22srk.restuff.reshade.ReShadeFiles
 import com.deivid22srk.restuff.data.GpuDriverManager
 import com.deivid22srk.restuff.settings.PortSettings
 import com.deivid22srk.restuff.settings.PortSettingsRepository
@@ -201,6 +202,8 @@ class GameActivity : SDLActivity() {
         // ---- Players (Settings → Players): local multiplayer routing ----
         cfg["input_merge_controllers"] = "${settings.mergeControllers}"
         settings.playerInputs.forEachIndexed { i, v -> cfg["input_player${i + 1}"] = "\"$v\"" }
+        // ---- Network play (Settings → Network play): LAN sessions, experimental ----
+        cfg["net_play"] = "${settings.netPlay}"
         // ---- Rumble-XX patches (Settings → Game patches; rrxx/src/rrxx_patches.h) ----
         cfg["rrxx_blur_off"] = "${settings.patchBlurOff}"
         cfg["rrxx_bloom"] = "${settings.patchBloom.level}"
@@ -226,6 +229,29 @@ class GameActivity : SDLActivity() {
                     Toast.LENGTH_SHORT,
                 ).show()
             }
+        }
+        // ---- ReShade (0.4.0): effects from Internal storage/Rumble Roses XX/reshade ----
+        var reshadeDir = if (settings.reshadeEnabled && publicLogDir != null) ReShadeFiles.folder() else null
+        // Freeze guard: the engine deletes .starting once ReShade has run 120 frames.
+        // If it's still there, the last run with ReShade froze or crashed first.
+        if (reshadeDir != null && ReShadeFiles.startMarker(reshadeDir).exists()) {
+            runCatching { PortSettingsRepository(this).save(settings.copy(reshadeEnabled = false)) }
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    "ReShade is off: the last run with it froze or crashed. See ReShade.log in Settings.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            reshadeDir = null
+        }
+        if (reshadeDir != null && ReShadeFiles.readTechniques(ReShadeFiles.preset(reshadeDir)).isNotEmpty()) {
+            runCatching { ReShadeFiles.startMarker(reshadeDir).writeText("") }
+            cfg["reshade_enabled"] = "true"
+            cfg["reshade_path"] = "\"${reshadeDir.absolutePath}\""
+            cfg["reshade_preset"] = "\"${ReShadeFiles.preset(reshadeDir).absolutePath}\""
+        } else {
+            cfg["reshade_enabled"] = "false"
         }
         // ---- GPU fixes and diagnostics carried over from the WET port ----
         // (the SDK overlays keep their wet_ names). Their default paths point at
@@ -338,6 +364,18 @@ class GameActivity : SDLActivity() {
         // criada (visibilidade conforme a preferência): o diálogo de ajustes
         // rápidos liga/desliga AO VIVO, sem recriar nada.
         val settings = PortSettingsRepository(this).load()
+        // Network play: some Wi-Fi drivers drop broadcast packets (LAN session
+        // discovery) unless an app holds a multicast lock.
+        if (settings.netPlay) {
+            multicastLock = runCatching {
+                val wifi = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                    as android.net.wifi.WifiManager
+                wifi.createMulticastLock("rrxx-net-play").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }.getOrNull()
+        }
         val layout = SDLActivity.getContentView() as? ViewGroup
         if (layout != null) {
             val pad = VirtualGamepadView(
@@ -375,7 +413,11 @@ class GameActivity : SDLActivity() {
         applyOverlaySettings(settings)
     }
 
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
     override fun onDestroy() {
+        runCatching { multicastLock?.release() }
+        multicastLock = null
         fpsCounter?.stop()
         fpsCounter = null
         virtualPad?.shutdown()

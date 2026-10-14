@@ -69,6 +69,7 @@ for rel in \
     include/rex/platform/dynlib.h \
     src/system/CMakeLists.txt \
     include/rex/ui/vulkan/device.h \
+    include/rex/ui/vulkan/presenter.h \
     include/rex/ui/vulkan/functions/device_1_0.inc \
     src/ui/vulkan/vulkan_device.cpp \
     src/ui/vulkan/vulkan_presenter.cpp \
@@ -91,7 +92,12 @@ for rel in \
     src/system/function_dispatcher.cpp \
     src/system/mmio_handler.cpp \
     src/system/xmemory.cpp \
-    src/system/xam/content_manager.cpp
+    src/system/xam/content_manager.cpp \
+    src/system/xsocket.cpp \
+    src/kernel/xam/xam_net.cpp \
+    src/kernel/xam/xam_user.cpp \
+    src/kernel/xam/apps/xgi_app.cpp \
+    src/kernel/xam/apps/xlivebase_app.cpp
 do
     replace "$OVERLAY/rexglue-sdk/$rel" "$ROOT/rexglue-sdk/$rel"
 done
@@ -104,9 +110,19 @@ for rel in \
     include/rex/main_android.h \
     src/system/main_android.cpp \
     include/renderdoc/renderdoc_app.h \
-    src/graphics/vulkan/wet_tex_probe.h
+    src/graphics/vulkan/wet_tex_probe.h \
+    src/ui/vulkan/reshade_effects.h \
+    src/ui/vulkan/reshade_effects.cpp \
+    src/ui/vulkan/reshade_runtime.h \
+    src/ui/vulkan/reshade_runtime.cpp
 do
     addnew "$OVERLAY/rexglue-sdk/$rel" "$ROOT/rexglue-sdk/$rel"
+done
+
+# ReShadeFX (crosire/reshade 6.8 effect compiler, BSD-3-Clause), whole folder.
+mkdir -p "$ROOT/rexglue-sdk/src/ui/vulkan/reshadefx"
+for src in "$OVERLAY/rexglue-sdk/src/ui/vulkan/reshadefx/"*; do
+    addnew "$src" "$ROOT/rexglue-sdk/src/ui/vulkan/reshadefx/$(basename "$src")"
 done
 
 echo "Overlays applied."
