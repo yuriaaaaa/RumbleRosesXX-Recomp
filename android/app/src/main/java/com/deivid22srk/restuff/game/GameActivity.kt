@@ -198,6 +198,9 @@ class GameActivity : SDLActivity() {
         cfg["mount_cache"] = "true"
         cfg["input_backend"] = "\"sdl\""
         cfg["mnk_mode"] = "false"
+        // ---- Players (Settings → Players): local multiplayer routing ----
+        cfg["input_merge_controllers"] = "${settings.mergeControllers}"
+        settings.playerInputs.forEachIndexed { i, v -> cfg["input_player${i + 1}"] = "\"$v\"" }
         // ---- Rumble-XX patches (Settings → Game patches; rrxx/src/rrxx_patches.h) ----
         cfg["rrxx_blur_off"] = "${settings.patchBlurOff}"
         cfg["rrxx_bloom"] = "${settings.patchBloom.level}"
