@@ -41,8 +41,8 @@ echo "==> Launcher unit tests"
 (cd "$HERE" && ./gradlew --no-daemon :app:testDebugUnitTest)
 
 # The last build made for the device was 0.1.3 (code 4).
-export RESTUFF_VERSION_CODE="${RESTUFF_VERSION_CODE:-4}"
-export RESTUFF_VERSION_NAME="${RESTUFF_VERSION_NAME:-0.1.3}"
+export RESTUFF_VERSION_CODE="${RESTUFF_VERSION_CODE:-9}"
+export RESTUFF_VERSION_NAME="${RESTUFF_VERSION_NAME:-0.1.7-reshade}"
 mkdir -p "$HERE/build/out"
 if [ "$SKIP_GAME" = 1 ]; then
     echo "==> Native libraries without the game (AdrenoTools, Vortek, SDK with the port's overlays)"
