@@ -89,7 +89,19 @@ data class PortSettings(
     val patchNoQueenBanner: Boolean = true,
     val patchNoCrowds: Boolean = false,
     val patchUltrawide: Boolean = false,
-)
+    /** Local multiplayer: what drives players 1-4. Each entry is "auto",
+     *  "touch", "pad1".."pad4" or "none" (cvars input_player1..4). */
+    val playerInputs: List<String> = DEFAULT_PLAYER_INPUTS,
+) {
+    /** All players on auto keeps the single-player behaviour: every device drives player 1. */
+    val mergeControllers: Boolean get() = playerInputs.all { it == PLAYER_AUTO }
+}
+
+const val PLAYER_AUTO = "auto"
+const val PLAYER_TOUCH = "touch"
+const val PLAYER_NONE = "none"
+val DEFAULT_PLAYER_INPUTS = List(4) { PLAYER_AUTO }
+private val playerInputPattern = Regex("^(auto|touch|none|pad[1-4])$")
 
 /**
  * Persistência simples e sem dependências (SharedPreferences). Chaves
@@ -121,6 +133,10 @@ class PortSettingsRepository(context: Context) {
             patchNoQueenBanner = prefs.getBoolean(K_PATCH_QUEEN_BANNER, true),
             patchNoCrowds = prefs.getBoolean(K_PATCH_CROWDS, false),
             patchUltrawide = prefs.getBoolean(K_PATCH_ULTRAWIDE, false),
+            playerInputs = List(4) { i ->
+                prefs.getString(K_PLAYER_PREFIX + (i + 1), PLAYER_AUTO)
+                    ?.takeIf { playerInputPattern.matches(it) } ?: PLAYER_AUTO
+            },
         )
     }
 
@@ -146,6 +162,9 @@ class PortSettingsRepository(context: Context) {
             .putBoolean(K_PATCH_QUEEN_BANNER, s.patchNoQueenBanner)
             .putBoolean(K_PATCH_CROWDS, s.patchNoCrowds)
             .putBoolean(K_PATCH_ULTRAWIDE, s.patchUltrawide)
+            .also { e ->
+                s.playerInputs.forEachIndexed { i, v -> e.putString(K_PLAYER_PREFIX + (i + 1), v) }
+            }
             .apply()
     }
 
@@ -173,5 +192,6 @@ class PortSettingsRepository(context: Context) {
         const val K_PATCH_QUEEN_BANNER = "rrxx_patch_no_queen_banner"
         const val K_PATCH_CROWDS = "rrxx_patch_no_crowds"
         const val K_PATCH_ULTRAWIDE = "rrxx_patch_ultrawide"
+        const val K_PLAYER_PREFIX = "rrxx_player_input_"
     }
 }

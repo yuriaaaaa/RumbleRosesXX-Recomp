@@ -98,8 +98,11 @@ extracted folder (it is read in place; nothing is copied). Logs go to
 - **Settings:** graphics driver (system or an imported Turnip driver), FPS counter, touch
   controls, Engine options (advanced), and "Game patches" (the Rumble-XX patches: blur off, bloom,
   no weapon icons, no Queen match banner, no background crowds, 21:9).
-- Every pad and the touch overlay control player 1. For local 2-player, add
-  `input_merge_controllers = false` under Engine options (advanced).
+- **Players (local multiplayer):** by default every pad and the touch overlay control player 1.
+  Settings → Players sets each of players 1-4 to Auto, Touch screen, Controller 1-4 or Off, and
+  "Detect" assigns whichever controller you press a button on. Controllers are numbered in the
+  order they connected, and Auto players take the next free one. The choices become the
+  `input_player1`..`input_player4` cvars; only player 1 is signed in to a profile.
 
 ## How this differs from the Windows build
 

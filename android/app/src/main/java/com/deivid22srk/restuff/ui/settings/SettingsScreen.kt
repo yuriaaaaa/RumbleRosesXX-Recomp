@@ -42,7 +42,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.foundation.focusable
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -73,7 +79,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.deivid22srk.restuff.config.PortBranding
 import com.deivid22srk.restuff.data.GpuDriverManager
+import com.deivid22srk.restuff.game.ConnectedController
+import com.deivid22srk.restuff.game.Controllers
 import com.deivid22srk.restuff.game.EngineOverrides
+import com.deivid22srk.restuff.game.rememberConnectedControllers
+import com.deivid22srk.restuff.settings.DEFAULT_PLAYER_INPUTS
+import com.deivid22srk.restuff.settings.PLAYER_AUTO
+import com.deivid22srk.restuff.settings.PLAYER_NONE
+import com.deivid22srk.restuff.settings.PLAYER_TOUCH
 import com.deivid22srk.restuff.settings.BloomOption
 import com.deivid22srk.restuff.settings.FpsLimitOption
 import com.deivid22srk.restuff.settings.PortSettings
@@ -331,6 +344,11 @@ fun SettingsScreen(
             ) { value ->
                 onSettingsChange { it.copy(overlayScale = value) }
             }
+
+            SectionGap()
+
+            // ========================== JOGADORES ========================
+            PlayersSection(settings = settings, onSettingsChange = onSettingsChange)
 
             SectionGap()
 
@@ -1127,3 +1145,188 @@ private fun EngineOptionsSection(
     }
 }
 
+
+// ======================================================================
+// Jogadores (multiplayer local)
+// ======================================================================
+
+private fun playerInputLabel(value: String, controllers: List<ConnectedController>): String =
+    when {
+        value == PLAYER_AUTO -> "Auto"
+        value == PLAYER_TOUCH -> "Touch screen"
+        value == PLAYER_NONE -> "Off"
+        value.startsWith("pad") -> {
+            val n = value.removePrefix("pad").toIntOrNull() ?: 0
+            val name = controllers.getOrNull(n - 1)?.name
+            if (name != null) "Controller $n" else "Controller $n (not connected)"
+        }
+        else -> value
+    }
+
+/**
+ * Picks what drives players 1-4 (cvars input_player1..4). All on Auto keeps
+ * the single-player routing, where every device drives player 1.
+ */
+@Composable
+private fun PlayersSection(
+    settings: PortSettings,
+    onSettingsChange: ((PortSettings) -> PortSettings) -> Unit,
+) {
+    val controllers = rememberConnectedControllers()
+    var detectingPlayer by remember { mutableStateOf<Int?>(null) }
+
+    fun setPlayer(index: Int, value: String) {
+        onSettingsChange { s ->
+            val next = s.playerInputs.toMutableList()
+            // One controller (or the touch pad) drives one player: take it off
+            // whoever had it.
+            if (value != PLAYER_AUTO && value != PLAYER_NONE) {
+                for (i in next.indices) if (i != index && next[i] == value) next[i] = PLAYER_AUTO
+            }
+            next[index] = value
+            s.copy(playerInputs = next)
+        }
+    }
+
+    SectionHeader("Players")
+
+    Text(
+        text = if (controllers.isEmpty()) {
+            "No controllers detected. Connect one over Bluetooth or USB."
+        } else {
+            controllers.mapIndexed { i, c -> "Controller ${i + 1}: ${c.name}" }.joinToString("\n")
+        },
+        color = PortPalette.textSecondary,
+        style = PortType.rowSub,
+        modifier = Modifier.padding(vertical = 8.dp)
+    )
+    Text(
+        text = "All on Auto: every controller and the touch screen drive player 1. " +
+            "Set any player to test 2P; Auto players then take the next free controller.",
+        color = PortPalette.textTertiary,
+        style = PortType.rowSub,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+
+    for (index in 0 until 4) {
+        Hairline()
+        val current = settings.playerInputs[index]
+        val padCount = maxOf(
+            controllers.size,
+            current.removePrefix("pad").toIntOrNull()?.takeIf { current.startsWith("pad") } ?: 0
+        ).coerceAtMost(4)
+        val options = buildList {
+            add(PLAYER_AUTO)
+            add(PLAYER_TOUCH)
+            for (n in 1..padCount) add("pad$n")
+            add(PLAYER_NONE)
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Player ${index + 1}", color = PortPalette.textPrimary, style = PortType.rowLabel)
+                Text(
+                    playerInputLabel(current, controllers),
+                    color = PortPalette.textSecondary,
+                    style = PortType.rowSub
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .heightIn(min = 40.dp)
+                    .clip(RoundedCornerShape(PortPalette.radiusSm))
+                    .border(1.dp, PortPalette.ghostBorder, RoundedCornerShape(PortPalette.radiusSm))
+                    .portClickable(haptic = true) { detectingPlayer = index }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Detect", color = PortPalette.textPrimary, style = PortType.chip)
+            }
+        }
+        ChoiceChipsRow(
+            options = options,
+            selected = current,
+            label = { v ->
+                when {
+                    v.startsWith("pad") -> "Controller ${v.removePrefix("pad")}"
+                    else -> playerInputLabel(v, controllers)
+                }
+            },
+            onSelect = { v -> setPlayer(index, v) }
+        )
+        Spacer(Modifier.height(10.dp))
+    }
+    if (settings.playerInputs != DEFAULT_PLAYER_INPUTS) {
+        Hairline()
+        Spacer(Modifier.height(10.dp))
+        DangerButton(label = "Reset players to Auto", enabled = true) {
+            onSettingsChange { it.copy(playerInputs = DEFAULT_PLAYER_INPUTS) }
+        }
+    }
+
+    detectingPlayer?.let { index ->
+        DetectControllerDialog(
+            player = index + 1,
+            onTouch = { setPlayer(index, PLAYER_TOUCH); detectingPlayer = null },
+            onController = { n -> setPlayer(index, "pad$n"); detectingPlayer = null },
+            onDismiss = { detectingPlayer = null }
+        )
+    }
+}
+
+/** Waits for a button press and reports which controller (1-based) sent it. */
+@Composable
+private fun DetectControllerDialog(
+    player: Int,
+    onTouch: () -> Unit,
+    onController: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val focus = remember { FocusRequester() }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(PortPalette.radiusLg),
+            color = PortPalette.surface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focus)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    val device = event.nativeKeyEvent.device ?: return@onPreviewKeyEvent false
+                    if (!Controllers.isController(device)) return@onPreviewKeyEvent false
+                    val n = Controllers.list().indexOfFirst { it.deviceId == device.id }
+                    if (n in 0..3) onController(n + 1)
+                    true
+                }
+        ) {
+            Column(Modifier.padding(22.dp)) {
+                Text("Player $player", color = PortPalette.textPrimary, style = PortType.titleScreen)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Press any button on the controller for player $player.",
+                    color = PortPalette.textSecondary,
+                    style = PortType.rowSub
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf("Use touch screen" to onTouch, "Cancel" to onDismiss).forEach { (label, action) ->
+                        Box(
+                            modifier = Modifier
+                                .heightIn(min = 44.dp)
+                                .clip(RoundedCornerShape(PortPalette.radiusSm))
+                                .border(1.dp, PortPalette.ghostBorder, RoundedCornerShape(PortPalette.radiusSm))
+                                .portClickable(haptic = true) { action() }
+                                .padding(horizontal = 14.dp, vertical = 11.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, color = PortPalette.textPrimary, style = PortType.chip)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+}

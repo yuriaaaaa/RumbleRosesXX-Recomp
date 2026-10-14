@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 #include <rex/dbg.h>
 #include <rex/input/device_assignment.h>
@@ -42,6 +43,16 @@ REXCVAR_DEFINE_BOOL(input_merge_controllers, true, "Input",
                     "Route every controller (touch overlay, Bluetooth and USB pads, keyboard) to "
                     "player 1, merging their input");
 
+// Rumble Roses XX Android port: local multiplayer. Each guest player gets a
+// source chosen in the launcher: "auto" (next free controller), "touch" (the
+// on-screen pad), "pad1".."pad4" (the Nth physical controller, in connection
+// order) or "none". Only used when input_merge_controllers is off; the launcher
+// turns merging off as soon as any player is set to something other than auto.
+REXCVAR_DEFINE_STRING(input_player1, "auto", "Input", "Player 1 source: auto, touch, pad1-pad4, none");
+REXCVAR_DEFINE_STRING(input_player2, "auto", "Input", "Player 2 source: auto, touch, pad1-pad4, none");
+REXCVAR_DEFINE_STRING(input_player3, "auto", "Input", "Player 3 source: auto, touch, pad1-pad4, none");
+REXCVAR_DEFINE_STRING(input_player4, "auto", "Input", "Player 4 source: auto, touch, pad1-pad4, none");
+
 REXCVAR_DEFINE_DOUBLE(left_stick_deadzone_percentage, 0.0, "Input",
                       "Deadzone applied to the left stick, as a fraction of its range")
     .range(0.0, 1.0);
@@ -59,6 +70,95 @@ constexpr uint32_t kSyntheticOrdinal = UINT32_MAX;
 
 // XN_SYS_INPUTDEVICESCHANGED
 constexpr uint32_t kXNotificationSystemInputDevicesChanged = 0x00000012;
+
+// The launcher's on-screen pad is an SDL virtual joystick. SDL encodes the
+// bus in the first GUID word, little-endian, and virtual devices use 0xFF.
+bool IsTouchPad(const DeviceInfo& device) {
+  return device.guid.rfind("ff00", 0) == 0 ||
+         device.name.find("Virtual Pad") != std::string::npos;
+}
+
+/// Routes devices to guest users from the input_player1..4 cvars.
+class PlayerAssignment final : public DeviceAssignment {
+ public:
+  void OnDevicesChanged(const std::vector<DeviceInfo>& devices) override {
+    for (auto& user : users_) {
+      user.clear();
+    }
+    const std::string sources[kMaxGuestUsers] = {
+        REXCVAR_GET(input_player1), REXCVAR_GET(input_player2),
+        REXCVAR_GET(input_player3), REXCVAR_GET(input_player4)};
+
+    // Devices arrive sorted by ordinal, so pads stay in connection order.
+    std::vector<const DeviceInfo*> touch, synthetic, pads;
+    for (const auto& device : devices) {
+      if (device.synthetic) {
+        synthetic.push_back(&device);
+      } else if (IsTouchPad(device)) {
+        touch.push_back(&device);
+      } else {
+        pads.push_back(&device);
+      }
+    }
+
+    std::vector<bool> pad_used(pads.size(), false);
+    bool touch_assigned = false;
+    for (uint32_t p = 0; p < kMaxGuestUsers; p++) {
+      const std::string& src = sources[p];
+      if (src == "touch") {
+        for (auto* d : touch) users_[p].push_back(d->id);
+        touch_assigned = true;
+      } else if (src.size() == 4 && src.rfind("pad", 0) == 0 && src[3] >= '1' && src[3] <= '4') {
+        size_t n = static_cast<size_t>(src[3] - '1');
+        if (n < pads.size()) {
+          users_[p].push_back(pads[n]->id);
+          pad_used[n] = true;
+        }
+      }
+    }
+    // Auto players take the remaining pads in order.
+    size_t next = 0;
+    for (uint32_t p = 0; p < kMaxGuestUsers; p++) {
+      if (sources[p] != "auto") {
+        continue;
+      }
+      while (next < pads.size() && pad_used[next]) next++;
+      if (next < pads.size()) {
+        users_[p].push_back(pads[next]->id);
+        pad_used[next] = true;
+      }
+    }
+    // Keep the old behaviour for player 1: touch (when nobody claimed it) and
+    // keyboard emulation still drive them.
+    if (!touch_assigned && sources[0] == "auto") {
+      for (auto* d : touch) users_[0].push_back(d->id);
+    }
+    for (auto* d : synthetic) users_[0].push_back(d->id);
+
+    for (uint32_t p = 0; p < kMaxGuestUsers; p++) {
+      std::string names;
+      for (DeviceId id : users_[p]) {
+        for (const auto& device : devices) {
+          if (device.id == id && !device.synthetic) {
+            names += names.empty() ? "" : ", ";
+            names += device.name.empty() ? "?" : device.name;
+          }
+        }
+      }
+      REXLOG_INFO("Player {} ({}): {}", p + 1, sources[p], names.empty() ? "nothing" : names);
+    }
+  }
+
+  void DevicesForUser(uint32_t user_index, std::vector<DeviceId>& out) const override {
+    out.clear();
+    if (user_index < kMaxGuestUsers) {
+      out = users_[user_index];
+    }
+  }
+
+ private:
+  std::vector<DeviceId> users_[kMaxGuestUsers];
+};
 
 }  // namespace
 
@@ -530,7 +630,7 @@ std::unique_ptr<InputSystem> CreateDefaultInputSystem(bool tool_mode) {
   if (REXCVAR_GET(input_merge_controllers)) {
     input->SetDeviceAssignment(std::make_unique<SharedAssignment>());
   } else {
-    input->SetDeviceAssignment(std::make_unique<SlotAssignment>());
+    input->SetDeviceAssignment(std::make_unique<PlayerAssignment>());
   }
   return input;
 }
