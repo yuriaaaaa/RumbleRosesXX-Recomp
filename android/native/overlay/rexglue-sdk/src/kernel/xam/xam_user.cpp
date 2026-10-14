@@ -12,7 +12,10 @@
 // Disable warnings about unused parameters for kernel functions
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+#include <algorithm>
 #include <cstring>
+#include <string>
+#include <vector>
 #ifndef _WIN32
 #include <arpa/inet.h>
 #endif
@@ -740,6 +743,154 @@ u32 XamWriteGamerTile_entry(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5, u3
   return X_ERROR_SUCCESS;
 }
 
+// Rumble Roses XX Android port, network play: the online menu reads its
+// leaderboards through a stats enumerator and shows "Failed obtaining data"
+// when the call fails. There is no Live service, so hand back one row per
+// requested view for the local player with every column zero.
+//
+// Layouts (XDK, big-endian):
+//   XUSER_STATS_SPEC         { u32 view_id; u32 num_columns; u16 column_ids[64]; }  136 bytes
+//   XUSER_STATS_READ_RESULTS { u32 num_views; u32 views_ptr; }                       8 bytes
+//   XUSER_STATS_VIEW         { u32 view_id; u32 total_rows; u32 num_rows; u32 rows_ptr; } 16
+//   XUSER_STATS_ROW          { u64 xuid; u32 rank; pad; i64 rating; char gamertag[16];
+//                              u32 num_columns; u32 columns_ptr; }                  48 bytes
+//   XUSER_STATS_COLUMN       { u16 column_id; pad; XUSER_DATA value (type@0, data@8) } 24
+struct NetPlayStatsView {
+  uint32_t view_id;
+  std::vector<uint16_t> columns;
+};
+
+static std::vector<NetPlayStatsView> NetPlayReadStatsSpecs(uint32_t specs_ptr, uint32_t count) {
+  std::vector<NetPlayStatsView> views;
+  if (!specs_ptr || count > 64) return views;
+  auto* specs = REX_KERNEL_MEMORY()->TranslateVirtual<uint8_t*>(specs_ptr);
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint8_t* spec = specs + i * 136;
+    NetPlayStatsView view;
+    view.view_id = memory::load_and_swap<uint32_t>(spec + 0);
+    uint32_t num_columns = std::min<uint32_t>(memory::load_and_swap<uint32_t>(spec + 4), 64);
+    for (uint32_t c = 0; c < num_columns; ++c) {
+      view.columns.push_back(memory::load_and_swap<uint16_t>(spec + 8 + c * 2));
+    }
+    views.push_back(std::move(view));
+  }
+  return views;
+}
+
+static uint32_t NetPlayStatsSize(const std::vector<NetPlayStatsView>& views, uint32_t rows) {
+  uint32_t size = 8;
+  for (const auto& view : views) {
+    size += 16 + rows * (48 + uint32_t(view.columns.size()) * 24);
+  }
+  return size;
+}
+
+// Writes XUSER_STATS_READ_RESULTS at guest_ptr with one row per xuid in every view.
+static uint32_t NetPlayWriteStats(uint32_t guest_ptr, uint8_t* out,
+                                  const std::vector<NetPlayStatsView>& views,
+                                  const std::vector<uint64_t>& xuids,
+                                  const std::string& gamertag) {
+  std::memset(out, 0, NetPlayStatsSize(views, uint32_t(xuids.size())));
+  uint32_t offset = 8;
+  memory::store_and_swap<uint32_t>(out + 0, uint32_t(views.size()));
+  memory::store_and_swap<uint32_t>(out + 4, views.empty() ? 0 : guest_ptr + offset);
+  uint32_t view_offset = offset;
+  offset += uint32_t(views.size()) * 16;
+  for (const auto& view : views) {
+    uint8_t* v = out + view_offset;
+    view_offset += 16;
+    uint32_t rows_offset = offset;
+    offset += uint32_t(xuids.size()) * 48;
+    memory::store_and_swap<uint32_t>(v + 0, view.view_id);
+    memory::store_and_swap<uint32_t>(v + 4, uint32_t(xuids.size()));
+    memory::store_and_swap<uint32_t>(v + 8, uint32_t(xuids.size()));
+    memory::store_and_swap<uint32_t>(v + 12, xuids.empty() ? 0 : guest_ptr + rows_offset);
+    for (size_t r = 0; r < xuids.size(); ++r) {
+      uint8_t* row = out + rows_offset + r * 48;
+      memory::store_and_swap<uint64_t>(row + 0, xuids[r]);
+      memory::store_and_swap<uint32_t>(row + 8, uint32_t(r + 1));
+      std::memcpy(row + 24, gamertag.data(), std::min<size_t>(gamertag.size(), 15));
+      memory::store_and_swap<uint32_t>(row + 40, uint32_t(view.columns.size()));
+      memory::store_and_swap<uint32_t>(row + 44,
+                                       view.columns.empty() ? 0 : guest_ptr + offset);
+      for (uint16_t column_id : view.columns) {
+        uint8_t* column = out + offset;
+        offset += 24;
+        memory::store_and_swap<uint16_t>(column + 0, column_id);
+        column[8] = 1;  // XUSER_DATA_TYPE_INT32, value 0
+      }
+    }
+  }
+  return offset;
+}
+
+class XNetPlayStatsEnumerator : public XEnumerator {
+ public:
+  XNetPlayStatsEnumerator(KernelState* kernel_state, std::vector<NetPlayStatsView> views,
+                          std::vector<uint64_t> xuids, std::string gamertag, uint32_t size)
+      : XEnumerator(kernel_state, 1, size),
+        views_(std::move(views)),
+        xuids_(std::move(xuids)),
+        gamertag_(std::move(gamertag)) {}
+
+  uint32_t WriteItems(uint32_t buffer_ptr, uint8_t* buffer_data,
+                      uint32_t* written_count) override {
+    if (done_) {
+      return X_ERROR_NO_MORE_FILES;
+    }
+    done_ = true;
+    NetPlayWriteStats(buffer_ptr, buffer_data, views_, xuids_, gamertag_);
+    if (written_count) {
+      *written_count = 1;
+    }
+    return X_ERROR_SUCCESS;
+  }
+
+ private:
+  std::vector<NetPlayStatsView> views_;
+  std::vector<uint64_t> xuids_;
+  std::string gamertag_;
+  bool done_ = false;
+};
+
+// The XDK's XUserCreateStatsEnumeratorBy* wrappers insert the enumeration
+// type after the title id (checked against the game's call sites):
+// (title_id, type, pivot, num_rows, num_specs, specs, buffer_size_ptr, handle_ptr).
+u32 XamUserCreateStatsEnumerator_entry(u32 title_id, u32 type, u32 pivot, u32 num_rows,
+                                       u32 num_specs, u32 specs_ptr, mapped_u32 buffer_size_ptr,
+                                       mapped_u32 handle_ptr) {
+  REXKRNL_INFO("[net] XamUserCreateStatsEnumerator(title {:08X}, type {}, pivot {:08X}, rows {}, "
+               "specs {} @ {:08X}, size_ptr {:08X}, handle_ptr {:08X})",
+               uint32_t(title_id), uint32_t(type), uint32_t(pivot), uint32_t(num_rows),
+               uint32_t(num_specs), uint32_t(specs_ptr), buffer_size_ptr.guest_address(),
+               handle_ptr.guest_address());
+  if (!handle_ptr || !num_specs || num_specs > 64 || !specs_ptr) {
+    return X_ERROR_INVALID_PARAMETER;
+  }
+
+  auto views = NetPlayReadStatsSpecs(specs_ptr, num_specs);
+  std::vector<uint64_t> xuids;
+  std::string gamertag = "Player";
+  if (const auto& user_profile = REX_KERNEL_STATE()->user_profile()) {
+    xuids.push_back(NetPlayXuid(user_profile->xuid()));
+    gamertag = user_profile->name();
+  }
+
+  uint32_t size = NetPlayStatsSize(views, std::max<uint32_t>(num_rows, 1));
+  if (buffer_size_ptr) {
+    *buffer_size_ptr = size;
+  }
+
+  auto e = object_ref<XNetPlayStatsEnumerator>(new XNetPlayStatsEnumerator(
+      REX_KERNEL_STATE(), std::move(views), std::move(xuids), std::move(gamertag), size));
+  auto result = e->Initialize(0xFF, 0xFB, 0xB0021, 0xB0022, 0);
+  if (XFAILED(result)) {
+    return result;
+  }
+  *handle_ptr = e->handle();
+  return X_ERROR_SUCCESS;
+}
+
 u32 XamSessionCreateHandle_entry(mapped_u32 handle_ptr) {
   *handle_ptr = 0xCAFEDEAD;
   return X_ERROR_SUCCESS;
@@ -782,6 +933,8 @@ REX_EXPORT(__imp__XamUserCreateAchievementEnumerator,
 REX_EXPORT(__imp__XamParseGamerTileKey, rex::kernel::xam::XamParseGamerTileKey_entry)
 REX_EXPORT(__imp__XamReadTileToTexture, rex::kernel::xam::XamReadTileToTexture_entry)
 REX_EXPORT(__imp__XamWriteGamerTile, rex::kernel::xam::XamWriteGamerTile_entry)
+REX_EXPORT(__imp__XamUserCreateStatsEnumerator,
+           rex::kernel::xam::XamUserCreateStatsEnumerator_entry)
 REX_EXPORT(__imp__XamSessionCreateHandle, rex::kernel::xam::XamSessionCreateHandle_entry)
 REX_EXPORT(__imp__XamSessionRefObjByHandle, rex::kernel::xam::XamSessionRefObjByHandle_entry)
 
@@ -789,7 +942,6 @@ REX_EXPORT_STUB(__imp__XamUserAddRecentPlayer);
 REX_EXPORT_STUB(__imp__XamUserAllowedToPostToSocialNetwork);
 REX_EXPORT_STUB(__imp__XamUserCreateAvatarAssetEnumerator);
 REX_EXPORT_STUB(__imp__XamUserCreatePlayerEnumerator);
-REX_EXPORT_STUB(__imp__XamUserCreateStatsEnumerator);
 REX_EXPORT_STUB(__imp__XamUserCreateTitlesPlayedEnumerator);
 REX_EXPORT_STUB(__imp__XamUserFlushLogonQueue);
 REX_EXPORT_STUB(__imp__XamUserGetAge);
